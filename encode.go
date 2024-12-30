@@ -12,7 +12,7 @@ var (
 	customEnvelopeAttrs map[string]string = nil
 )
 
-// SetCustomEnvelope define customizated envelope
+// SetCustomEnvelope define customizated envelopefdsfds
 func SetCustomEnvelope(prefix string, attrs map[string]string) {
 	soapPrefix = prefix
 	if attrs != nil {
