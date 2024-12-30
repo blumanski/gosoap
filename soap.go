@@ -5,7 +5,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
@@ -17,15 +16,13 @@ import (
 	"golang.org/x/net/html/charset"
 )
 
-type SoapParams interface{}
-
 // HeaderParams holds params specific to the header
 type HeaderParams map[string]interface{}
 
 // Params type is used to set the params in soap request
+type SoapParams interface{}
 type Params map[string]interface{}
 type ArrayParams [][2]interface{}
-type SliceParams []interface{}
 
 type DumpLogger interface {
 	LogRequest(method string, dump []byte)
@@ -85,7 +82,7 @@ type Client struct {
 	AutoAction   bool
 	URL          string
 	HeaderName   string
-	HeaderParams SoapParams
+	HeaderParams HeaderParams
 	Definitions  *wsdlDefinitions
 	// Must be set before first request otherwise has no effect, minimum is 15 minutes.
 	RefreshDefinitionsAfter time.Duration
@@ -243,9 +240,7 @@ func (p *process) doRequest(url string) ([]byte, error) {
 
 	req.Header.Add("Content-Type", "text/xml;charset=UTF-8")
 	req.Header.Add("Accept", "text/xml")
-	if p.SoapAction != "" {
-		req.Header.Add("SOAPAction", p.SoapAction)
-	}
+	req.Header.Add("SOAPAction", p.SoapAction)
 
 	resp, err := p.httpClient().Do(req)
 	if err != nil {
@@ -262,12 +257,6 @@ func (p *process) doRequest(url string) ([]byte, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 400 {
-		if !(p.Client.config != nil && p.Client.config.Dump) {
-			_, err := io.Copy(ioutil.Discard, resp.Body)
-			if err != nil {
-				return nil, err
-			}
-		}
 		return nil, errors.New("unexpected status code: " + resp.Status)
 	}
 
