@@ -4,10 +4,11 @@ import (
 	"encoding/xml"
 	"fmt"
 	"reflect"
+	"regexp"
 )
 
 var (
-	soapPrefix = "soap"
+	soapPrefix                            = "soap"
 	customEnvelopeAttrs map[string]string = nil
 )
 
@@ -31,14 +32,14 @@ func (c process) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
 	namespace := ""
 	if c.Client.Definitions.Types != nil {
 		schema := c.Client.Definitions.Types[0].XsdSchema[0]
-		namespace = schema.TargetNamespace
+		namespace = c.Client.Definitions.TargetNamespace
 		if namespace == "" && len(schema.Imports) > 0 {
 			namespace = schema.Imports[0].Namespace
 		}
 	}
 
 	tokens.startEnvelope()
-	if c.Client.HeaderParams != nil {
+	if len(c.Client.HeaderParams) > 0 {
 		tokens.startHeader(c.Client.HeaderName, namespace)
 		tokens.recursiveEncode(c.Client.HeaderParams)
 		tokens.endHeader(c.Client.HeaderName)
@@ -74,41 +75,49 @@ func (tokens *tokenData) recursiveEncode(hm interface{}) {
 
 	switch v.Kind() {
 	case reflect.Map:
-		for _, key := range v.MapKeys() {
-			t := xml.StartElement{
-				Name: xml.Name{
-					Space: "",
-					Local: key.String(),
-				},
-			}
 
-			tokens.data = append(tokens.data, t)
-			tokens.recursiveEncode(v.MapIndex(key).Interface())
-			tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
+		regexpAttrBox := regexp.MustCompile(`([^\[]+)\[(.*)\]`)
+		regexpAttrs := regexp.MustCompile(`,?([^=]+)=([^,]+)`)
+
+		for _, key := range v.MapKeys() {
+			if regexpAttrBox.MatchString(key.String()) {
+				rs := regexpAttrBox.FindStringSubmatch(key.String())
+
+				var attrs []xml.Attr
+				matches := regexpAttrs.FindAllStringSubmatch(rs[2], -1)
+				for _, match := range matches {
+					attrs = append(attrs, xml.Attr{Name: xml.Name{Local: match[1]}, Value: match[2]})
+				}
+
+				t := xml.StartElement{
+					Name: xml.Name{
+						Space: "",
+						Local: rs[1],
+					},
+					Attr: attrs,
+				}
+				tokens.data = append(tokens.data, t)
+				tokens.recursiveEncode(v.MapIndex(key).Interface())
+				tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
+			} else {
+				t := xml.StartElement{
+					Name: xml.Name{
+						Space: "",
+						Local: key.String(),
+					},
+				}
+				tokens.data = append(tokens.data, t)
+				tokens.recursiveEncode(v.MapIndex(key).Interface())
+				tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
+			}
 		}
 	case reflect.Slice:
 		for i := 0; i < v.Len(); i++ {
 			tokens.recursiveEncode(v.Index(i).Interface())
 		}
-	case reflect.Array:
-		if v.Len() == 2 {
-			label := v.Index(0).Interface()
-			t := xml.StartElement{
-				Name: xml.Name{
-					Space: "",
-					Local: label.(string),
-				},
-			}
-
-			tokens.data = append(tokens.data, t)
-			tokens.recursiveEncode(v.Index(1).Interface())
-			tokens.data = append(tokens.data, xml.EndElement{Name: t.Name})
-		}
 	case reflect.String:
 		content := xml.CharData(v.String())
 		tokens.data = append(tokens.data, content)
-	case reflect.Struct:
-		tokens.data = append(tokens.data, v.Interface())
 	}
 }
 
@@ -130,7 +139,7 @@ func (tokens *tokenData) startEnvelope() {
 		e.Attr = make([]xml.Attr, 0)
 		for local, value := range customEnvelopeAttrs {
 			e.Attr = append(e.Attr, xml.Attr{
-				Name: xml.Name{Space: "", Local: local},
+				Name:  xml.Name{Space: "", Local: local},
 				Value: value,
 			})
 		}
@@ -174,8 +183,6 @@ func (tokens *tokenData) startHeader(m, n string) {
 	}
 
 	tokens.data = append(tokens.data, h, r)
-
-	return
 }
 
 func (tokens *tokenData) endHeader(m string) {
@@ -237,12 +244,3 @@ func (tokens *tokenData) endBody(m string) {
 		},
 	}
 
-	r := xml.EndElement{
-		Name: xml.Name{
-			Space: "",
-			Local: m,
-		},
-	}
-
-	tokens.data = append(tokens.data, r, b)
-}
