@@ -1,4 +1,4 @@
-module github.com/blumanski/gosoapx
+module github.com/blumanski/gosoapy
 
 require (
 	github.com/google/go-cmp v0.5.0 // indirect
